@@ -1,0 +1,12 @@
+[
+{
+  "directory": "/root/Desktop/Nreal/task5/build",
+  "command": "/usr/bin/g++   -I/usr/include/eigen3 -isystem /root/opencv-3.4.9lib/include -isystem /root/opencv-3.4.9lib/include/opencv  -std=c++11 -g   -o CMakeFiles/problem1_3.dir/problem1_3.cpp.o -c /root/Desktop/Nreal/task5/problem1_3.cpp",
+  "file": "/root/Desktop/Nreal/task5/problem1_3.cpp"
+},
+{
+  "directory": "/root/Desktop/Nreal/task5/build",
+  "command": "/usr/bin/g++  -DSOPHUS_USE_BASIC_LOGGING=1 -I/usr/include/eigen3 -isystem /root/opencv-3.4.9lib/include -isystem /root/opencv-3.4.9lib/include/opencv -isystem /usr/local/include -isystem /usr/local/include/eigen3  -std=c++11 -g   -std=gnu++1z -o CMakeFiles/problem4.dir/problem4.cpp.o -c /root/Desktop/Nreal/task5/problem4.cpp",
+  "file": "/root/Desktop/Nreal/task5/problem4.cpp"
+}
+]

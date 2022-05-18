@@ -1,0 +1,4 @@
+/root/Desktop/Nreal/task3/build/CMakeFiles/rebuild_cache.dir
+/root/Desktop/Nreal/task3/build/CMakeFiles/edit_cache.dir
+/root/Desktop/Nreal/task3/build/CMakeFiles/1.dir
+/root/Desktop/Nreal/task3/build/CMakeFiles/3.dir

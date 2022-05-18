@@ -1,0 +1,12 @@
+[
+{
+  "directory": "/root/Desktop/Nreal/task3/build",
+  "command": "/usr/bin/g++   -I/usr/include/eigen3  -std=c++11 -g   -o CMakeFiles/1.dir/src.cpp.o -c /root/Desktop/Nreal/task3/src.cpp",
+  "file": "/root/Desktop/Nreal/task3/src.cpp"
+},
+{
+  "directory": "/root/Desktop/Nreal/task3/build",
+  "command": "/usr/bin/g++   -I/usr/include/eigen3  -std=c++11 -g   -o CMakeFiles/3.dir/Solving_linear_equations.cpp.o -c /root/Desktop/Nreal/task3/Solving_linear_equations.cpp",
+  "file": "/root/Desktop/Nreal/task3/Solving_linear_equations.cpp"
+}
+]

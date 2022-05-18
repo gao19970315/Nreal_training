@@ -1,0 +1,1 @@
+/usr/bin/g++  -std=c++11 -g  -rdynamic CMakeFiles/3.dir/Solving_linear_equations.cpp.o  -o 3 

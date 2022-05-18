@@ -1,0 +1,4 @@
+/root/Desktop/Nreal/task5/build/CMakeFiles/edit_cache.dir
+/root/Desktop/Nreal/task5/build/CMakeFiles/rebuild_cache.dir
+/root/Desktop/Nreal/task5/build/CMakeFiles/problem1_3.dir
+/root/Desktop/Nreal/task5/build/CMakeFiles/problem4.dir
