@@ -242,6 +242,12 @@ void triangulation_opencv(
     const Mat &R, const Mat &t,
     vector<Point3d> &points_3d,
     const cv::Mat &K);
+void Triangulate(
+    const cv::KeyPoint &kp1, //特征点, in reference frame
+    const cv::KeyPoint &kp2, //特征点, in current frame
+    const cv::Mat &P1,       //投影矩阵P1
+    const cv::Mat &P2,       //投影矩阵P2
+    cv::Mat &x3D);
 
 int main(int agrc, char **argv)
 {
@@ -267,7 +273,6 @@ int main(int agrc, char **argv)
   eigen2cv(K, K_cv);
   undistort(picture_1, picture_1_undistort, K_cv, Distcoef);
   undistort(picture_2, picture_2_undistort, K_cv, Distcoef);
-
   vector<KeyPoint> keypoints_1, keypoints_2;
   vector<DMatch> matches, matches_after_ransac;
   int nfeatures = 1000;
@@ -293,44 +298,54 @@ int main(int agrc, char **argv)
     points_1.push_back(keypoints_1[matches_after_ransac[i].queryIdx].pt);
     points_2.push_back(keypoints_2[matches_after_ransac[i].trainIdx].pt);
   }
-  
+
   std::vector<uchar> inliers(points_1.size(), 0);
-  cv::Mat F_opencv = findFundamentalMat(points_1, points_2,inliers,         // 匹配状态(inlier 或 outlier)
-      cv::FM_RANSAC,    
-      ransac_reprojection,         
-      0.99);
-  vector<Point2f> points_1_new,points_2_new;
-  correctMatches(F_opencv,points_1,points_2,points_1_new,points_2_new);
-  cv::Mat E_opencv = K_cv.t()*F_opencv*K_cv;
+  cv::Mat F_opencv = findFundamentalMat(points_1, points_2, inliers, // 匹配状态(inlier 或 outlier)
+                                        cv::FM_RANSAC,
+                                        ransac_reprojection,
+                                        0.99);
+  vector<Point2f> points_1_new, points_2_new;
+  correctMatches(F_opencv, points_1, points_2, points_1_new, points_2_new);
+  cv::Mat E_opencv = K_cv.t() * F_opencv * K_cv;
   cout << "F_opencv\n"
        << F_opencv << endl;
   cv::Mat R_cv_estimated, t_cv_estimated;
+  cv::Mat E_opencv2=findEssentialMat(points_1_new,points_2_new,K_cv);
   recoverPose(E_opencv, points_1_new, points_2_new, K_cv, R_cv_estimated, t_cv_estimated);
+  cout<<"E_opencv\n"<<E_opencv<<endl;
+  cout<<"E_opencv2\n"<<E_opencv2<<endl;
+  cout << "R\n" << R_cv_estimated << endl;
+  cout << "t\n" << t_cv_estimated << endl;
   // t_cv_estimated.at<float>(0)=t_cv_estimated.at<float>(0)/t_cv_estimated.at<float>(2);
   // t_cv_estimated.at<float>(1)=t_cv_estimated.at<float>(1)/t_cv_estimated.at<float>(2);
   // t_cv_estimated.at<float>(2)=1;
   vector<cv::Point3d> pts_3d;
   triangulation_opencv(keypoints_1, keypoints_2, matches_after_ransac, R_cv_estimated, t_cv_estimated, pts_3d, K_cv);
   //优化之前的重投影误差计算
-
+  //
   double error_before_BA = 0;
   for (int i = 0; i < pts_3d.size(); i++)
   {
 
     Mat P3D = (Mat_<double>(3, 1) << pts_3d[i].x, pts_3d[i].y, pts_3d[i].z);
-    //cout<<"t_cv_estimated\n"<<t_cv_estimated<<endl;
+    // cout<<"t_cv_estimated\n"<<t_cv_estimated<<endl;
     Mat pts_3d_img2 = R_cv_estimated * P3D + t_cv_estimated;
+
     double xp = pts_3d_img2.at<float>(0) / pts_3d_img2.at<float>(2);
     double yp = pts_3d_img2.at<float>(1) / pts_3d_img2.at<float>(2);
+
     double fx = 458.654, fy = 457.296, cx = 367.215, cy = 248.375;
     double u = xp * fx + cx;
     double v = yp * fy + cy;
     double dx = points_2[i].x - u;
     double dy = points_2[i].y - v;
+
     Eigen::Vector2d error_point(dx, dy);
     cout << "第" << i << "个点的重投影误差" << error_point.norm() << endl;
     error_before_BA += error_point.norm();
+    
   }
+
   float mean_error_before_BA = error_before_BA / pts_3d.size() * 1.0;
   cout << "error_before_BA: " << error_before_BA << "  mean_error_before_BA" << mean_error_before_BA << endl;
   vector<double> r_vector, t_vector(3);
@@ -704,4 +719,115 @@ void triangulation(
   Eigen::Vector2d s = svd.matrixV().col(V_last_cols - 1);
   cout << "\ns\n"
        << s << endl;
+}
+void triangulation2(
+    const vector<KeyPoint> &keypoint_1,
+    const vector<KeyPoint> &keypoint_2,
+    const std::vector<DMatch> &matches,
+    const Mat &R, const Mat &t,
+    vector<Point3d> &points,
+    const cv::Mat &K)
+{
+  int nbgood = 0;
+  cv::Mat P1(3, 4, CV_32F, cv::Scalar(0));
+
+  Mat P2 = (Mat_<float>(3, 4) << R.at<double>(0, 0), R.at<double>(0, 1), R.at<double>(0, 2), t.at<double>(0, 0),
+            R.at<double>(1, 0), R.at<double>(1, 1), R.at<double>(1, 2), t.at<double>(1, 0),
+            R.at<double>(2, 0), R.at<double>(2, 1), R.at<double>(2, 2), t.at<double>(2, 0));
+  P2 = K * P2;
+  for (size_t i = 0, iend = matches.size(); i < iend; i++)
+  {
+    const cv::KeyPoint &kp1 = keypoint_1[matches[i].queryIdx];
+    const cv::KeyPoint &kp2 = keypoint_2[matches[i].trainIdx];
+    cv::Mat p3dC1;
+    Triangulate(kp1, kp2, //特征点
+                P1, P2,   //投影矩阵
+                p3dC1);
+    if (p3dC1.at<float>(2) <= 0)
+      continue;
+
+    // Check depth in front of second camera (only if enough parallax, as "infinite" points can easily go to negative depth)
+    // 讲空间点p3dC1变换到第2个相机坐标系下变为p3dC2
+    cv::Mat p3dC2 = R * p3dC1 + t;
+    //判断过程和上面的相同
+    if (p3dC2.at<float>(2) <= 0)
+      continue;
+
+    float im1x, im1y;
+    //这个使能空间点的z坐标的倒数
+    float invZ1 = 1.0 / p3dC1.at<float>(2);
+
+    //投影到参考帧图像上。因为参考帧下的相机坐标系和世界坐标系重合，因此这里就直接进行投影就可以了
+    double fx = 458.654, fy = 457.296, cx = 367.215, cy = 248.375;
+    im1x = fx * p3dC1.at<float>(0) * invZ1 + cx;
+    im1y = fy * p3dC1.at<float>(1) * invZ1 + cy;
+    //参考帧上的重投影误差，这个的确就是按照定义来的
+    float squareError1 = (im1x - kp1.pt.x) * (im1x - kp1.pt.x) + (im1y - kp1.pt.y) * (im1y - kp1.pt.y);
+    if (squareError1 > 4)
+      continue;
+    float im2x, im2y;
+    // 注意这里的p3dC2已经是第二个相机坐标系下的三维点了
+    float invZ2 = 1.0 / p3dC2.at<float>(2);
+    im2x = fx * p3dC2.at<float>(0) * invZ2 + cx;
+    im2y = fy * p3dC2.at<float>(1) * invZ2 + cy;
+
+    // 计算重投影误差
+    float squareError2 = (im2x - kp2.pt.x) * (im2x - kp2.pt.x) + (im2y - kp2.pt.y) * (im2y - kp2.pt.y);
+    // 重投影误差太大，跳过淘汰
+    if (squareError2 > 4)
+      continue;
+    points[matches[i].queryIdx] = cv::Point3f(p3dC1.at<float>(0), p3dC1.at<float>(1), p3dC1.at<float>(2));
+    nbgood++;
+  }
+}
+
+void Triangulate(
+    const cv::KeyPoint &kp1, //特征点, in reference frame
+    const cv::KeyPoint &kp2, //特征点, in current frame
+    const cv::Mat &P1,       //投影矩阵P1
+    const cv::Mat &P2,       //投影矩阵P2
+    cv::Mat &x3D)            //三维点
+{
+  // 原理
+  // Trianularization: 已知匹配特征点对{x x'} 和 各自相机矩阵{P P'}, 估计三维点 X
+  // x' = P'X  x = PX
+  // 它们都属于 x = aPX模型
+  //                         |X|
+  // |x|     |p1 p2  p3  p4 ||Y|     |x|    |--p0--||.|
+  // |y| = a |p5 p6  p7  p8 ||Z| ===>|y| = a|--p1--||X|
+  // |z|     |p9 p10 p11 p12||1|     |z|    |--p2--||.|
+  // 采用DLT的方法：x叉乘PX = 0
+  // |yp2 -  p1|     |0|
+  // |p0 -  xp2| X = |0|
+  // |xp1 - yp0|     |0|
+  // 两个点:
+  // |yp2   -  p1  |     |0|
+  // |p0    -  xp2 | X = |0| ===> AX = 0
+  // |y'p2' -  p1' |     |0|
+  // |p0'   - x'p2'|     |0|
+  // 变成程序中的形式：
+  // |xp2  - p0 |     |0|
+  // |yp2  - p1 | X = |0| ===> AX = 0
+  // |x'p2'- p0'|     |0|
+  // |y'p2'- p1'|     |0|
+  // 然后就组成了一个四元一次正定方程组，SVD求解，右奇异矩阵的最后一行就是最终的解.
+
+  //这个就是上面注释中的矩阵A
+  cv::Mat A(4, 4, CV_32F);
+
+  //构造参数矩阵A
+  A.row(0) = kp1.pt.x * P1.row(2) - P1.row(0);
+  A.row(1) = kp1.pt.y * P1.row(2) - P1.row(1);
+  A.row(2) = kp2.pt.x * P2.row(2) - P2.row(0);
+  A.row(3) = kp2.pt.y * P2.row(2) - P2.row(1);
+
+  //奇异值分解的结果
+  cv::Mat u, w, vt;
+  //对系数矩阵A进行奇异值分解
+  cv::SVD::compute(A, w, u, vt, cv::SVD::MODIFY_A | cv::SVD::FULL_UV);
+  //根据前面的结论，奇异值分解右矩阵的最后一行其实就是解，原理类似于前面的求最小二乘解，四个未知数四个方程正好正定
+  //别忘了我们更习惯用列向量来表示一个点的空间坐标
+  x3D = vt.row(3).t();
+  //为了符合其次坐标的形式，使最后一维为1
+  x3D = x3D.rowRange(0, 3) / x3D.at<float>(3);
 }
