@@ -34,9 +34,9 @@ int main(int argc, char **argv)
     Eigen::Vector2d x_solve_1_1 = svd1.solve(b1);
     Eigen::Vector2d x_solve_2 = A2.colPivHouseholderQr().solve(b2);
 
-    cout << x_solve_1_0.transpose() << endl;
-    cout << x_solve_1_1.transpose() << endl;
-    cout << x_solve_2.transpose() << endl;
+    cout <<"QR分解:" <<x_solve_1_0.transpose() << endl;
+    cout <<"解1:"<<x_solve_1_1.transpose() << endl;
+    cout <<"解2:"<< x_solve_2.transpose() << endl;
 
     float condition_num1,condition_num2;
     //奇异值矩阵就是从大到小排列的

@@ -29,7 +29,7 @@ int main(int argc,char ** argv){
     Eigen::Quaterniond right_q_left (T.rotation());
     Eigen::Vector3d right_p_left (T.translation());
     
-    cout <<right_p_left.transpose()<<endl;
-    cout <<right_q_left.coeffs().transpose()<<endl;
+    cout <<"位移："<<right_p_left.transpose()<<endl;
+    cout <<"四元数旋转："<<right_q_left.coeffs().transpose()<<endl;
 
 }
