@@ -240,7 +240,7 @@ int main(int agrc, char **argv)
   options_auto.linear_solver_type = ceres::SPARSE_SCHUR;
   options_auto.minimizer_progress_to_stdout = true;
   options_auto.max_num_iterations = 50;
-  options_auto.check_gradients = true;
+  options_auto.check_gradients = false;
 
   ceres::Solve(options_auto, &problem_auto, &summary_auto);
   cout << summary_auto.FullReport() << endl;
