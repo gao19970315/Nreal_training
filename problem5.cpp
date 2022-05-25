@@ -242,7 +242,7 @@ int main(int agrc, char **argv)
   options_auto.max_num_iterations = 50;
   options_auto.check_gradients = true;
 
-  ceres::Solve(&options_auto, &problem_auto, &summary_auto);
+  ceres::Solve(options_auto, &problem_auto, &summary_auto);
   cout << summary_auto.FullReport() << endl;
   auto t2_auto_2 = chrono::steady_clock::now();
   auto time_auto_used_2 = chrono::duration_cast<chrono::duration<double>>(t2_auto_2 - t1_auto_2);
