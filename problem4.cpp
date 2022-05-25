@@ -19,35 +19,34 @@ using namespace cv;
 class SE3Parameterization : public ceres::LocalParameterization
 {
 public:
-    SE3Parameterization() {}
-    virtual ~SE3Parameterization() {}
+  SE3Parameterization() {}
+  virtual ~SE3Parameterization() {}
 
-    virtual bool Plus(const double* x,
-                      const double* delta,
-                      double* x_plus_delta) const
-    {
-        Eigen::Map<const Eigen::Matrix<double, 6, 1>> lie(x);
-        Eigen::Map<const Eigen::Matrix<double, 6, 1>> delta_lie(delta);
+  virtual bool Plus(const double *x,
+                    const double *delta,
+                    double *x_plus_delta) const
+  {
+    Eigen::Map<const Eigen::Matrix<double, 6, 1>> lie(x);
+    Eigen::Map<const Eigen::Matrix<double, 6, 1>> delta_lie(delta);
+    Sophus::SE3d T = Sophus::SE3d::exp(lie);
+    Sophus::SE3d delta_T = Sophus::SE3d::exp(delta_lie);
 
-        Sophus::SE3d T = Sophus::SE3d::exp(lie);
-        Sophus::SE3d delta_T = Sophus::SE3d::exp(delta_lie);
+    // 李代数左乘更新
+    Eigen::Matrix<double, 6, 1> x_plus_delta_lie = (delta_T * T).log();
 
-        // 李代数左乘更新
-        Eigen::Matrix<double, 6, 1> x_plus_delta_lie = (delta_T * T).log();
+    for (int i = 0; i < 6; ++i)
+      x_plus_delta[i] = x_plus_delta_lie(i, 0);
 
-        for(int i = 0; i < 6; ++i)
-            x_plus_delta[i] = x_plus_delta_lie(i, 0);
-
-        return true;
-    }
-    virtual bool ComputeJacobian(const double* x,
-                                 double* jacobian) const
-    {
-        ceres::MatrixRef(jacobian, 6, 6) = ceres::Matrix::Identity(6, 6);
-        return true;
-    }
-    virtual int GlobalSize() const { return 6; }
-    virtual int LocalSize() const { return 6; }
+    return true;
+  }
+  virtual bool ComputeJacobian(const double *x,
+                               double *jacobian) const
+  {
+    ceres::MatrixRef(jacobian, 6, 6) = ceres::Matrix::Identity(6, 6);
+    return true;
+  }
+  virtual int GlobalSize() const { return 6; }
+  virtual int LocalSize() const { return 6; }
 };
 
 class PnPSE3ReprojectionError : public ceres::SizedCostFunction<2, 6>
@@ -171,27 +170,27 @@ public:
   {
     Eigen::Map<const Eigen::Matrix<T, 6, 1>> se3(camera);
     Eigen::Map<const Eigen::Matrix<T, 3, 1>> _pts_3d(point);
-    Eigen::Map<Eigen::Matrix<T, 2, 1>> error{ residuals };
-    //Eigen::Matrix<T, 6, 1> se3;
-    //Eigen::Matrix<T, 3, 1> _pts_3d;
-    // camera[0,1,2] are the angle-axis rotation
+    Eigen::Map<Eigen::Matrix<T, 2, 1>> error{residuals};
+    // Eigen::Matrix<T, 6, 1> se3;
+    // Eigen::Matrix<T, 3, 1> _pts_3d;
+    //  camera[0,1,2] are the angle-axis rotation
 
-    //cout << "测试读取李代数数据" << camera[0]<<"2222"<<camera[1]<<camera[2];
-    //cout << "测试：！！！！----se3:   " << se3.transpose() << endl;
+    // cout << "测试读取李代数数据" << camera[0]<<"2222"<<camera[1]<<camera[2];
+    // cout << "测试：！！！！----se3:   " << se3.transpose() << endl;
     T predictions[2];
-    
+
     Sophus::SE3<T> T_pose(Sophus::SE3<T>::exp(se3));
-    Eigen::Matrix<T,3,1>  Pc = T_pose * _pts_3d;
-    Eigen::Matrix<double,3,1> pc_test;
+    Eigen::Matrix<T, 3, 1> Pc = T_pose * _pts_3d;
+    Eigen::Matrix<double, 3, 1> pc_test;
     Eigen::Matrix<double, 3, 3> K;
     K.template cast<T>();
-    //cout << "3d点：" << _pts_3d << endl;
+    // cout << "3d点：" << _pts_3d << endl;
     double fx = 458.654, fy = 457.296, cx = 367.215, cy = 248.375;
     K << fx, 0, cx,
         0, fy, cy,
         0, 0, 1;
-    //auto K_new=K.cast<double>();
-     error = _pts_2d - (K * Pc).hnormalized();
+    // auto K_new=K.cast<double>();
+    error = _pts_2d - (K * Pc).hnormalized();
     return true;
   }
 
@@ -261,7 +260,6 @@ public:
     return (new ceres::AutoDiffCostFunction<ReprojectionError, 2, 6, 3>(
         new ReprojectionError(observed_x, observed_y)));
   }
-
 private:
   double observed_x;
   double observed_y;
@@ -285,6 +283,96 @@ public:
     Eigen::Map<const Eigen::Matrix<double, 3, 1>> _pts_3d(parameters[1]);
     Sophus::SE3d T(Sophus::SE3d::exp(se3));
     Eigen::Vector3d Pc = T * _pts_3d;
+    Eigen::Matrix3d K;
+
+    double fx = 458.654, fy = 458.654, cx = 367.215, cy = 248.375;
+    K << fx, 0, cx,
+        0, fy, cy,
+        0, 0, 1;
+
+    Eigen::Vector2d error = _pts_2d - (K * Pc).hnormalized();
+    residuals[0] = error[0];
+    residuals[1] = error[1];
+
+    if (jacobians != NULL)
+    {
+      if (jacobians[0] != NULL)
+      {
+        Eigen::Map<Eigen::Matrix<double, 2, 6, Eigen::RowMajor>> J(jacobians[0]);
+
+        double x = Pc[0];
+        double y = Pc[1];
+        double z = Pc[2];
+
+        double x2 = x * x;
+        double y2 = y * y;
+        double z2 = z * z;
+
+        //误差关于扰动李代数导数
+        J(0, 0) = -fx / z;
+        J(0, 1) = 0;
+        J(0, 2) = fx * x / z2;
+        J(0, 3) = fx * x * y / z2;
+        J(0, 4) = -fx - fx * x2 / z2;
+        J(0, 5) = fx * y / z;
+
+        J(1, 0) = 0;
+        J(1, 1) = -fy / z;
+        J(1, 2) = fy * y / z2;
+        J(1, 3) = fy + fy * y2 / z2;
+        J(1, 4) = -fy * x * y / z2;
+        J(1, 5) = -fy * x / z;
+      }
+      if (jacobians[1] != NULL)
+      {
+        Eigen::Map<Eigen::Matrix<double, 2, 3, Eigen::RowMajor>> J2(jacobians[1]);
+        Eigen::Matrix<double, 2, 3> J_first;
+        double x = Pc[0];
+        double y = Pc[1];
+        double z = Pc[2];
+
+        double x2 = x * x;
+        double y2 = y * y;
+        double z2 = z * z;
+
+        //关于3d点导数
+        J_first(0, 0) = fx / z;
+        J_first(0, 1) = 0;
+        J_first(0, 2) = -fx * x / z2;
+
+        //关于3d点导数
+        J_first(1, 0) = 0;
+        J_first(1, 1) = fy / z;
+        J_first(1, 2) = -fy * y / z2;
+        J2 = -1 * J_first * T.rotationMatrix();
+      }
+    }
+    return true;
+  }
+
+private:
+  const Eigen::Vector2d _pts_2d;
+};
+
+class SE3ReprojectionError_test : public ceres::SizedCostFunction<2, 6, 3>
+{
+public:
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+  SE3ReprojectionError_test(Eigen::Vector2d pts_2d, Eigen::Matrix<double, 6, 1> &se3_origin) : _pts_2d(pts_2d), _se3_origin(se3_origin) {}
+
+  virtual ~SE3ReprojectionError_test() {}
+
+  virtual bool Evaluate(
+      double const *const *parameters, double *residuals, double **jacobians) const
+  {
+
+    Eigen::Map<const Eigen::Matrix<double, 6, 1>> se3(parameters[0]);
+    Eigen::Map<const Eigen::Matrix<double, 3, 1>> _pts_3d(parameters[1]);
+    Sophus::SE3d T_update(Sophus::SE3d::exp(se3));
+    Sophus::SE3d T(Sophus::SE3d::exp(_se3_origin));
+    Sophus::SE3d T_new = T_update * T;
+    Eigen::Vector3d Pc = T_new * _pts_3d;
     Eigen::Matrix3d K;
 
     double fx = 458.654, fy = 457.296, cx = 367.215, cy = 248.375;
@@ -328,7 +416,7 @@ public:
       if (jacobians[1] != NULL)
       {
         Eigen::Map<Eigen::Matrix<double, 2, 3, Eigen::RowMajor>> J2(jacobians[1]);
-        Eigen::Matrix<double,2,3> J_first;
+        Eigen::Matrix<double, 2, 3> J_first;
         double x = Pc[0];
         double y = Pc[1];
         double z = Pc[2];
@@ -346,16 +434,26 @@ public:
         J_first(1, 0) = 0;
         J_first(1, 1) = fy / z;
         J_first(1, 2) = -fy * y / z2;
-        J2=-J_first*T.rotationMatrix();
+        J2 = -1 * J_first * T.rotationMatrix();
       }
     }
-
     return true;
   }
 
 private:
   const Eigen::Vector2d _pts_2d;
+  Eigen::Matrix<double, 6, 1> _se3_origin;
 };
+
+inline cv::Scalar get_color(float depth)
+{
+  float up_th = 50, low_th = 10, th_range = up_th - low_th;
+  if (depth > up_th)
+    depth = up_th;
+  if (depth < low_th)
+    depth = low_th;
+  return cv::Scalar(255 * depth / th_range, 0, 255 * (1 - depth / th_range));
+}
 
 void find_feature_matches(const Mat &img_1, const Mat &img_2,
                           vector<KeyPoint> &keypoints_1,
@@ -372,6 +470,7 @@ cv::Mat compute_fundamental_matrix(const std::vector<cv::DMatch> &matches,
                                    std::vector<cv::KeyPoint> &keypoints2,
                                    const Eigen::Matrix3d &K);
 Point2d pixel2cam(const Point2d &p, const Mat &K);
+Point2d cam2pixel(const Point2d &p, const Mat &K);
 void triangulation(
     const vector<KeyPoint> &keypoint_1,
     const vector<KeyPoint> &keypoint_2,
@@ -450,7 +549,7 @@ int main(int agrc, char **argv)
                                         0.99);
   vector<Point2f> points_1_new, points_2_new;
   correctMatches(F_opencv, points_1, points_2, points_1_new, points_2_new);
-  
+
   cv::Mat E_opencv = K_cv.t() * F_opencv * K_cv;
   cout << "F_opencv\n"
        << F_opencv << endl;
@@ -472,6 +571,7 @@ int main(int agrc, char **argv)
   //优化之前的重投影误差计算
   //
   double error_before_BA = 0;
+  vector<double> verror_before_BA(pts_3d.size(), 0);
   for (int i = 0; i < pts_3d.size(); i++)
   {
 
@@ -489,13 +589,19 @@ int main(int agrc, char **argv)
     double dy = points_2[i].y - v;
 
     Eigen::Vector2d error_point(dx, dy);
-    //cout << "第" << i << "个点的重投影误差" << error_point.norm() << endl;
+    // cout << "第" << i << "个点的重投影误差" << error_point.norm() << endl;
     error_before_BA += error_point.norm();
+    verror_before_BA.push_back(error_point.norm());
   }
-
   float mean_error_before_BA = error_before_BA / pts_3d.size() * 1.0;
-  cout << "error_before_BA: " << error_before_BA << "  mean_error_before_BA" << mean_error_before_BA << endl;
-  
+  cout << " 平均投影误差:" << mean_error_before_BA << endl;
+  double variance_befor_BA = 0;
+  for (auto i : verror_before_BA)
+    variance_befor_BA += (i - mean_error_before_BA) * (i - mean_error_before_BA);
+  variance_befor_BA /= verror_before_BA.size();
+  cout << "variance_befor_BA:" << variance_befor_BA << endl;
+  cout << "Standard Deviation before BA:" << sqrt(variance_befor_BA) << endl;
+
   vector<double> r_vector, t_vector(3);
   double cere_rot[3], cere_tranf[3];
   cv::Rodrigues(R_cv_estimated, r_vector);
@@ -552,21 +658,23 @@ int main(int agrc, char **argv)
   options_test.minimizer_progress_to_stdout = true;
   options_test.dogleg_type = ceres::SUBSPACE_DOGLEG;
   //梯度检查
-  //options_test.check_gradients = ;
+  options_test.check_gradients = false;
 
   auto t1_auto_test = chrono::steady_clock::now();
   ceres::Solve(options_test, &problem_auto_posepoint, &summary_test);
-  std::cout << summary_test.BriefReport() << "\n";
+  std::cout << summary_test.FullReport() << "\n";
   auto t2_auto_test = chrono::steady_clock::now();
   auto time_auto_used_test = chrono::duration_cast<chrono::duration<double>>(t2_auto_test - t1_auto_test);
   cout << "ceres自动求导耗时(数据格式se3+3D点): " << time_auto_used_test.count() << " seconds." << endl;
 
   vector<double> verror_auto_pointpose_BA;
-  double error_auto_pointpose_BA = 0;
+  double error_auto_pointpose_BA = 0, mean_error_auto_pointpose_BA = 0;
+  double variance_auto_pointpose_BA = 0;
+
   for (int i = 0; i < pts_3d_eigen_test.size(); i++)
   {
     Sophus::SE3d T(Sophus::SE3d::exp(se3_test));
-    Eigen::Vector3d Pc = T * pts_3d_eigen[i];
+    Eigen::Vector3d Pc = T * pts_3d_eigen_test[i];
 
     Eigen::Vector2d error = pts_2d_eigen[i] - (K * Pc).hnormalized();
 
@@ -574,12 +682,19 @@ int main(int agrc, char **argv)
     error_auto_pointpose_BA += error.norm();
     verror_auto_pointpose_BA.push_back(error.norm());
   }
-  cout << "平均投影误差" << error_auto_pointpose_BA / pts_3d_eigen_test.size() << endl;
+  mean_error_auto_pointpose_BA = error_auto_pointpose_BA / pts_3d_eigen_test.size();
+  cout << "平均投影误差" << mean_error_auto_pointpose_BA << endl;
+
+  for (auto i : verror_auto_pointpose_BA)
+    variance_auto_pointpose_BA += (i - mean_error_auto_pointpose_BA) * (i - mean_error_auto_pointpose_BA);
+  variance_auto_pointpose_BA /= verror_auto_pointpose_BA.size();
+  cout << "variance_auto_pointpose_BA:" << variance_auto_pointpose_BA << endl;
+  cout << "Standard Deviation auto pointpose BA:" << sqrt(variance_auto_pointpose_BA) << endl;
 
   //*自动求导
   //*仅优化位姿
 
-  // //*数据格式定义
+  //*数据格式定义
   // cere_rot[0] = r_vector[0];
   // cere_rot[1] = r_vector[1];
   // cere_rot[2] = r_vector[2];
@@ -601,6 +716,7 @@ int main(int agrc, char **argv)
   // ceres::Solver::Summary summary2;
   // //开始求解
   // ceres::Solve(option2, &problem2, &summary2);
+  // cout<<summary2.FullReport()<<endl;
   // //显示优化信息
   // // cout << summary.BriefReport() << endl;
   // // cout << "仅优化位姿"
@@ -636,93 +752,122 @@ int main(int agrc, char **argv)
   // }
   // cout << "平均重投影误差：" << error_onlypose_BA / pts_3d.size() << endl;
 
-  // //*优化位姿和地图点 旋转向量+平移向量+位姿
+  //*优化位姿和地图点 旋转向量+平移向量+位姿
 
-  // ceres::Problem problem;
-  // for (int i = 0; i < pts_2d.size(); ++i)
-  // {
-  //   ceres::CostFunction *cost_function;
-  //   cost_function = ReprojectionError::Create(pts_2d[i].x, pts_2d[i].y);
-  //   // ceres::LossFunction *loss_function = new ceres::HuberLoss(1.0);
-  //   point[i * 3] = pts_3d[i].x;
-  //   point[i * 3 + 1] = pts_3d[i].y;
-  //   point[i * 3 + 2] = pts_3d[i].z;
-  //   //! bug出现在这里，每次都传的是首地址，每次都优化一个点，这怎么能优化得了
-  //   problem.AddResidualBlock(cost_function, NULL, camera, point + 3 * i);
-  // }
+  ceres::Problem problem;
+  for (int i = 0; i < pts_2d.size(); ++i)
+  {
+    ceres::CostFunction *cost_function;
+    cost_function = ReprojectionError::Create(pts_2d[i].x, pts_2d[i].y);
+    // ceres::LossFunction *loss_function = new ceres::HuberLoss(1.0);
+    point[i * 3] = pts_3d[i].x;
+    point[i * 3 + 1] = pts_3d[i].y;
+    point[i * 3 + 2] = pts_3d[i].z;
+    //! bug出现在这里，每次都传的是首地址，每次都优化一个点，这怎么能优化得了
+    problem.AddResidualBlock(cost_function, NULL, camera, point + 3 * i);
+  }
 
-  // auto t1_auto = chrono::steady_clock::now();
-  // std::cout << "Solving ceres BA ... " << endl;
-  // ceres::Solver::Options options;
-  // options.linear_solver_type = ceres::LinearSolverType::SPARSE_SCHUR;
-  // options.minimizer_progress_to_stdout = true;
-  // ceres::Solver::Summary summary;
-  // ceres::Solve(options, &problem, &summary);
+  auto t1_auto = chrono::steady_clock::now();
+  std::cout << "Solving ceres BA ... " << endl;
+  ceres::Solver::Options options;
+  options.linear_solver_type = ceres::LinearSolverType::SPARSE_SCHUR;
+  options.minimizer_progress_to_stdout = true;
+  options.check_gradients=false;
+  ceres::Solver::Summary summary;
+  ceres::Solve(options, &problem, &summary);
+  cout<<summary.FullReport()<<endl;
 
-  // auto t2_auto = chrono::steady_clock::now();
-  // auto time_auto_used = chrono::duration_cast<chrono::duration<double>>(t2_auto - t1_auto);
-  // cout << "ceres自动求导: " << time_auto_used.count() << " seconds." << endl;
+  auto t2_auto = chrono::steady_clock::now();
+  auto time_auto_used = chrono::duration_cast<chrono::duration<double>>(t2_auto - t1_auto);
+  cout << "ceres自动求导: " << time_auto_used.count() << " seconds." << endl;
+
   // // cout << "优化之前r：" << r_vector[0] << " " << r_vector[1] << " " << r_vector[2] << endl;
   // // cout << "优化之后r: " << camera[0] << "  " << camera[1] << "  " << camera[2] << endl;
   // // cout << "优化之前t：" << t_cv_estimated.at<double>(0, 0) << "  " << t_cv_estimated.at<double>(1, 0) << "  " << t_cv_estimated.at<double>(2, 0) << endl;
   // // cout << "优化之后t: " << camera[3] << "  " << camera[4] << "  " << camera[5] << endl;
 
-  // //计算重投影误差
-  // int N = pts_3d.size();
-  // double reprejection_error = 0, mean_error = 0, sqrt_error = 0;
-  // //保存每个点的重投影误差
-  // vector<double> error_auto_posepoint_ba(N, 0);
-  // for (int i = 0; i < N; i++)
-  // {
-  //   double x, y, z;
-  //   x = point[i * 3];
-  //   y = point[i * 3 + 1];
-  //   z = point[i * 3 + 2];
-
-  //   Mat P3D_c1 = (Mat_<double>(3, 1) << x, y, z);
-  //   Mat r = (Mat_<double>(3, 1) << camera[0], camera[1], camera[2]);
-  //   Mat t_cv_afterba_estimated = (Mat_<double>(3, 1) << camera[3], camera[4], camera[5]);
-  //   Mat R_cv_afterba_estimated;
-  //   Rodrigues(r, R_cv_afterba_estimated);
-  //   Mat P3D_c2 = R_cv_afterba_estimated * P3D_c1 + t_cv_afterba_estimated;
-
-  //   double xp = P3D_c2.at<double>(0) / P3D_c2.at<double>(2);
-  //   double yp = P3D_c2.at<double>(1) / P3D_c2.at<double>(2);
-
-  //   double fx = 458.654, fy = 457.296, cx = 367.215, cy = 248.375;
-  //   double u = xp * fx + cx;
-  //   double v = yp * fy + cy;
-  //   double dx = pts_2d[i].x - u;
-  //   double dy = pts_2d[i].y - v;
-
-  //   Eigen::Vector2d error_point(dx, dy);
-  //   error_auto_posepoint_ba[i] = error_point.norm();
-  //   cout << "第" << i << "个点的重投影误差" << error_auto_posepoint_ba[i] << endl;
-  //   reprejection_error += error_auto_posepoint_ba[i];
-  // }
-  // //计算方差和标准差
-  // cout << "平均重投影误差：" << reprejection_error / N << endl;
-
-
-  //*手动求导
-   ceres::Problem problem_;
-   ceres::LocalParameterization *local_param = new SE3Parameterization();
-   problem_.AddParameterBlock(se3.data(), 6, local_param);
-  for (int i = 0; i < pts_2d_eigen.size(); ++i)
+  //计算重投影误差
+  int N = pts_3d.size();
+  double reprejection_error = 0, mean_error = 0, sqrt_error = 0;
+  //保存每个点的重投影误差
+  vector<double> error_auto_posepoint_ba(N, 0);
+  for (int i = 0; i < N; i++)
   {
-    ceres::CostFunction *cost_function;
-    cost_function = new SE3ReprojectionError(pts_2d_eigen[i]);
-    problem_.AddResidualBlock(cost_function, NULL, se3.data(), pts_3d_eigen[i].data());
-    
-  }
+    double x, y, z;
+    x = point[i * 3];
+    y = point[i * 3 + 1];
+    z = point[i * 3 + 2];
 
-  
+    Mat P3D_c1 = (Mat_<double>(3, 1) << x, y, z);
+    Mat r = (Mat_<double>(3, 1) << camera[0], camera[1], camera[2]);
+    Mat t_cv_afterba_estimated = (Mat_<double>(3, 1) << camera[3], camera[4], camera[5]);
+    Mat R_cv_afterba_estimated;
+    Rodrigues(r, R_cv_afterba_estimated);
+    Mat P3D_c2 = R_cv_afterba_estimated * P3D_c1 + t_cv_afterba_estimated;
+
+    double xp = P3D_c2.at<double>(0) / P3D_c2.at<double>(2);
+    double yp = P3D_c2.at<double>(1) / P3D_c2.at<double>(2);
+
+    double fx = 458.654, fy = 457.296, cx = 367.215, cy = 248.375;
+    double u = xp * fx + cx;
+    double v = yp * fy + cy;
+    double dx = pts_2d[i].x - u;
+    double dy = pts_2d[i].y - v;
+
+    Eigen::Vector2d error_point(dx, dy);
+    error_auto_posepoint_ba[i] = error_point.norm();
+    cout << "第" << i << "个点的重投影误差" << error_auto_posepoint_ba[i] << endl;
+    reprejection_error += error_auto_posepoint_ba[i];
+  }
+  //计算方差和标准差
+  cout << "平均重投影误差：" << reprejection_error / N << endl;
+
   // for(int i=0; i<pts_3d_eigen.size(); ++i) {
   //     ceres::CostFunction *cost_function;
   //     cost_function = new PnPSE3ReprojectionError(pts_2d_eigen[i], pts_3d_eigen[i]);
   //     problem_.AddResidualBlock(cost_function, NULL, se3.data());
   // }
 
+  //*手动求导
+  ceres::Problem problem_;
+
+  Eigen::Matrix<double, 6, 1> se3_update;
+  se3_update.setZero();
+  vector<const ceres::LocalParameterization*> localparameters;
+  ceres::LocalParameterization *local_param = new SE3Parameterization();
+  localparameters.push_back(local_param);
+  localparameters.push_back(nullptr);
+
+  problem_.AddParameterBlock(se3.data(), 6, local_param);
+  ceres::NumericDiffOptions numeric_diff_options;
+  
+  
+  for (int i = 0; i < pts_2d_eigen.size(); ++i)
+  {
+    ceres::CostFunction *cost_function = new SE3ReprojectionError(pts_2d_eigen[i]);
+    problem_.AddParameterBlock(pts_3d_eigen[i].data(),3);
+    problem_.AddResidualBlock(cost_function, NULL, se3.data(), pts_3d_eigen[i].data());
+
+    ceres::GradientChecker gradient_checker(cost_function,&localparameters,numeric_diff_options);
+    std::vector<double*> parameter_blocks;
+    parameter_blocks.push_back(se3.data());
+    parameter_blocks.push_back(pts_3d_eigen[i].data());
+    ceres::GradientChecker::ProbeResults results;
+
+    //if(!gradient_checker.Probe(parameter_blocks.data(),1e-4,&results)){
+        //LOG(ERROR) << "An error has occurred:\n" << results.error_log;
+    //}
+  }
+  
+   
+  // for (int i = 0; i < pts_2d_eigen.size(); ++i)
+  // {
+  //   ceres::CostFunction *cost_function;
+  //   cost_function = new SE3ReprojectionError_test(pts_2d_eigen[i], se3);
+  //   problem_.AddResidualBlock(cost_function, NULL, se3.data(), pts_3d_eigen[i].data());
+  // }
+  // cout << "初始s3更新量：" << se3_back << endl;
+  // cout << "初始的se3：" << se3 << endl;
   ceres::Solver::Options options_;
   ceres::Solver::Summary summary_;
   options_.dynamic_sparsity = true;
@@ -734,18 +879,25 @@ int main(int agrc, char **argv)
   options_.minimizer_progress_to_stdout = true;
   options_.dogleg_type = ceres::SUBSPACE_DOGLEG;
   //梯度检查
-  options_.check_gradients = true;
-
+  //options_.check_gradients = true;
+  
   auto t1_manual = chrono::steady_clock::now();
   ceres::Solve(options_, &problem_, &summary_);
-  std::cout << summary_.BriefReport() << "\n";
+  // std::cout << summary_.BriefReport() << "\n";
+  std::cout << summary_.FullReport() << "\n";
   auto t2_manual = chrono::steady_clock::now();
   auto time_used = chrono::duration_cast<chrono::duration<double>>(t2_manual - t1_manual);
+
+  // cout << "初始s3更新量：" << se3_back << endl;
+  // cout << "初始的se3：" << se3 << endl;
   cout << "ceres手动求导耗时: " << time_used.count() << " seconds." << endl;
 
   //*重投影误差计算
   vector<double> verror_manunal_pointpose_BA;
   double error_manunal_pointpose_BA = 0;
+  double variance_manunal_pointpose_BA = 0, mean_error_manunal_pointpose_BA = 0;
+  ofstream reprojection_x("/home/docker_file/Nreal_training/x.txt");
+  ofstream reprojection_y("/home/docker_file/Nreal_training/y.txt");
   for (int i = 0; i < pts_3d_eigen.size(); i++)
   {
     Sophus::SE3d T(Sophus::SE3d::exp(se3));
@@ -753,14 +905,47 @@ int main(int agrc, char **argv)
 
     Eigen::Vector2d error = pts_2d_eigen[i] - (K * Pc).hnormalized();
 
+    reprojection_x << error.x() << endl;
+    reprojection_y << error.y() << endl;
+
     cout << "第" << i << "个点的重投影误差" << error.norm() << endl;
     error_manunal_pointpose_BA += error.norm();
     verror_manunal_pointpose_BA.push_back(error.norm());
   }
-  cout << "平均投影误差" << error_manunal_pointpose_BA / pts_3d_eigen.size() << endl;
+  mean_error_manunal_pointpose_BA = error_manunal_pointpose_BA / pts_3d_eigen.size();
+  cout << "平均投影误差" << mean_error_manunal_pointpose_BA << endl;
+  for (auto i : verror_manunal_pointpose_BA)
+    variance_manunal_pointpose_BA += (i - mean_error_manunal_pointpose_BA) * (i - mean_error_manunal_pointpose_BA);
+  variance_manunal_pointpose_BA /= verror_manunal_pointpose_BA.size();
+  cout << "variance_manunal_pointpose_BA:" << variance_manunal_pointpose_BA << endl;
+  cout << "Standard Deviation manunal pointpose BA:" << sqrt(variance_manunal_pointpose_BA) << endl;
 
   // std::cout << "estimated pose: \n"
   //           << Sophus::SE3d::exp(se3).matrix() << std::endl;
+  //可视化投影点和提取点的位置差异
+  Mat img1_plot = picture_1_undistort.clone();
+  Mat img2_plot = picture_2_undistort.clone();
+  vector<KeyPoint> keypoint_observerd(matches_after_ransac.size(), KeyPoint());
+  vector<KeyPoint> keypoint_projectd(matches_after_ransac.size(), KeyPoint());
+  for (int i = 0; i < matches_after_ransac.size(); i++)
+  {
+    float depth1 = pts_3d_eigen[i].z();
+    double xp = pts_3d_eigen[i].x() / depth1;
+    double yp = pts_3d_eigen[i].y() / depth1;
+
+    Point2f p_projection = cam2pixel(Point2f(xp, yp), K_cv);
+    keypoint_observerd[i].pt = keypoints_1[matches_after_ransac[i].queryIdx].pt;
+    keypoint_projectd[i].pt.x = p_projection.x;
+    keypoint_projectd[i].pt.y = p_projection.y;
+    // cv::circle(img1_plot, keypoints_1[matches[i].queryIdx].pt, 2, cv::Scalar(255,0,0), 2);
+    // cv::circle(img1_plot, p_projection, 2, cv::Scalar(255,255,255), 2);
+  }
+  drawKeypoints(img1_plot, keypoint_observerd, img1_plot, cv::Scalar(255, 0, 0));
+  drawKeypoints(img1_plot, keypoint_projectd, img1_plot, cv::Scalar(0, 0, 255));
+
+  cv::imshow("投影点和提取点差异 1", img1_plot);
+  cv::waitKey(0);
+
   return 0;
 }
 

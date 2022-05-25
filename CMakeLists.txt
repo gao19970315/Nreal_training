@@ -16,8 +16,10 @@ include_directories(
 
 add_executable(problem1_3 problem1_3.cpp)
 add_executable(problem4 problem4.cpp)
+add_executable(problem5 problem5.cpp parametersse3.cpp)
 
 target_link_libraries(problem1_3 ${OpenCV_LIBS})
 target_link_libraries(problem4 ${OpenCV_LIBS} ${CERES_LIBRARIES} Sophus::Sophus)
+target_link_libraries(problem5 ${OpenCV_LIBS} ${CERES_LIBRARIES} Sophus::Sophus)
 
 
