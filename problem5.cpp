@@ -419,7 +419,7 @@ int main(int agrc, char **argv)
 
 
 
-  //关于位姿李代数的导数
+  //*关于位姿李代数的导数
   ceres::Problem problem_3;
   problem_3.AddParameterBlock(se3.data(),6,new Pose_se3Parameterization());
   for (int i = 0; i < pts_2d_eigen.size(); ++i)
